@@ -1,0 +1,32 @@
+{
+  "name": "scaling-journey",
+  "version": "1.0.0",
+  "description": "JWT authentication testing with NocoDB PostgreSQL user seeding",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node seed-users.js",
+    "seed:force": "node seed-users.js --force"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.11.3",
+    "sqlite3": "^5.1.7"
+  },
+  "keywords": [
+    "jwt",
+    "authentication",
+    "nocodb",
+    "postgres",
+    "seed",
+    "testing"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "axios": "^1.13.2"
+  }
+}
