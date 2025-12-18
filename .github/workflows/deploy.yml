@@ -62,10 +62,10 @@ jobs:
           set -e  # Exit on any error
           echo "Starting deployment process..."
           
-          # Navigate to the project directory
-          echo "Navigating to /home/giles/backend-docker/backend-docker"
-          cd /home/giles/backend-docker/backend-docker || {
-            echo "Error: Directory /home/giles/backend-docker/backend-docker not found"
+          # Navigate to the git repository directory
+          echo "Navigating to git repository at /home/giles/backend-docker"
+          cd /home/giles/backend-docker || {
+            echo "Error: Directory /home/giles/backend-docker not found"
             exit 1
           }
           
@@ -73,6 +73,13 @@ jobs:
           echo "Pulling latest changes from main branch..."
           git pull origin main || {
             echo "Error: Failed to pull latest changes"
+            exit 1
+          }
+          
+          # Navigate to the Docker subdirectory
+          echo "Navigating to Docker directory /home/giles/backend-docker/backend-docker"
+          cd backend-docker || {
+            echo "Error: Docker subdirectory backend-docker not found"
             exit 1
           }
           
