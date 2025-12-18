@@ -1,0 +1,152 @@
+name: Deploy Backend to VPS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend-docker/**'
+
+jobs:
+  deploy:
+    name: Deploy Backend Docker
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install SSH client
+      run: |
+        apt-get update && apt-get install -y openssh-client
+
+    - name: Set up SSH key
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        echo "SSH key configured successfully"
+
+    - name: Add VPS host to known_hosts
+      env:
+        VPS_HOST: ${{ secrets.VPS_HOST }}
+        VPS_PORT: ${{ secrets.VPS_PORT }}
+      run: |
+        ssh-keyscan -p ${VPS_PORT:-22} ${VPS_HOST} >> ~/.ssh/known_hosts
+        echo "VPS host added to known_hosts"
+
+    - name: Deploy to VPS
+      env:
+        VPS_HOST: ${{ secrets.VPS_HOST }}
+        VPS_USER: ${{ secrets.VPS_USER }}
+        VPS_PORT: ${{ secrets.VPS_PORT }}
+      run: |
+        echo "Starting deployment to VPS..."
+        echo "Host: $VPS_HOST"
+        echo "User: $VPS_USER"
+        echo "Port: ${VPS_PORT:-22}"
+        
+        # Create SSH command with port if specified
+        SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts"
+        if [ ! -z "$VPS_PORT" ]; then
+          SSH_CMD="$SSH_CMD -p $VPS_PORT"
+        fi
+        SSH_CMD="$SSH_CMD $VPS_USER@$VPS_HOST"
+        
+        echo "Executing deployment commands..."
+        
+        # Navigate to project directory
+        $SSH_CMD << 'EOF'
+          set -e  # Exit on any error
+          echo "Starting deployment process..."
+          
+          # Navigate to the git repository directory
+          echo "Navigating to git repository at /home/giles/backend-docker"
+          cd /home/giles/backend-docker || {
+            echo "Error: Directory /home/giles/backend-docker not found"
+            exit 1
+          }
+          
+          # Pull latest changes
+          echo "Pulling latest changes from main branch..."
+          git pull origin main || {
+            echo "Error: Failed to pull latest changes"
+            exit 1
+          }
+          
+          # Navigate to the Docker subdirectory
+          echo "Navigating to Docker directory /home/giles/backend-docker/backend-docker"
+          cd backend-docker || {
+            echo "Error: Docker subdirectory backend-docker not found"
+            exit 1
+          }
+          
+          # Stop existing containers
+          echo "Stopping existing containers..."
+          sudo docker-compose down || {
+            echo "Warning: docker-compose down failed, containers may not be running"
+          }
+          
+          # Remove old backend image (with error handling)
+          echo "Removing old backend image..."
+          sudo docker rmi backend-docker_backend-1:latest 2>/dev/null || {
+            echo "Info: Image backend-docker_backend-1:latest does not exist or could not be removed"
+          }
+          
+          # Build and start services
+          echo "Building and starting services..."
+          sudo docker-compose up -d --build || {
+            echo "Error: Failed to build and start services"
+            exit 1
+          }
+          
+          # Wait a moment for containers to start
+          echo "Waiting for containers to start..."
+          sleep 10
+          
+          # Verify deployment
+          echo "Verifying deployment status..."
+          sudo docker-compose ps || {
+            echo "Warning: Could not verify container status"
+          }
+          
+          echo "Deployment completed successfully!"
+        EOF
+
+    - name: Check deployment logs
+      if: always()
+      env:
+        VPS_HOST: ${{ secrets.VPS_HOST }}
+        VPS_USER: ${{ secrets.VPS_USER }}
+        VPS_PORT: ${{ secrets.VPS_PORT }}
+      run: |
+        echo "Deployment status check..."
+        
+        # Create SSH command with port if specified
+        SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=~/.ssh/known_hosts"
+        if [ ! -z "$VPS_PORT" ]; then
+          SSH_CMD="$SSH_CMD -p $VPS_PORT"
+        fi
+        SSH_CMD="$SSH_CMD $VPS_USER@$VPS_HOST"
+        
+        $SSH_CMD << 'EOF'
+          echo "Current container status:"
+          sudo docker-compose ps || true
+          
+          echo -e "\nRecent logs from backend service:"
+          sudo docker-compose logs --tail=20 backend || true
+        EOF
+
+    - name: Deployment Status
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ Backend deployment completed successfully!"
+          echo "Deployment to VPS completed at: $(date)"
+        else
+          echo "❌ Backend deployment failed!"
+          echo "Deployment failed at: $(date)"
+          echo "Please check the logs above for details."
+        fi
