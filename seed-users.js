@@ -84,16 +84,16 @@ async function checkUsersTable() {
 async function createUsersTable() {
   const createTableSQL = `
     CREATE TABLE USERS (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       username VARCHAR(50) UNIQUE NOT NULL,
       password_hash VARCHAR(255) NOT NULL,
       role VARCHAR(20) NOT NULL,
       email VARCHAR(100) UNIQUE NOT NULL,
       firstName VARCHAR(50),
       lastName VARCHAR(50),
-      isActive BOOLEAN DEFAULT 1,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      isActive BOOLEAN DEFAULT TRUE,
+      createdAt TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
   `;
   
@@ -130,7 +130,7 @@ async function seedUsers(force = false) {
         try {
           // Check if user already exists
           const existing = await db.execute(
-            'SELECT id FROM USERS WHERE username = ? OR email = ?',
+            'SELECT id FROM USERS WHERE username = $1 OR email = $2',
             [user.username, user.email]
           );
 
@@ -140,8 +140,8 @@ async function seedUsers(force = false) {
               const hashedPassword = await hashPassword(user.password);
               await db.execute(
                 `UPDATE USERS 
-                 SET password_hash = ?, role = ?, firstName = ?, lastName = ?, isActive = 1 
-                 WHERE username = ?`,
+                 SET password_hash = $1, role = $2, firstName = $3, lastName = $4, isActive = TRUE 
+                 WHERE username = $5`,
                 [hashedPassword, user.role, user.firstName, user.lastName, user.username]
               );
               console.log(`🔄 Updated user: ${user.username} (${user.role})`);
@@ -154,7 +154,7 @@ async function seedUsers(force = false) {
             const hashedPassword = await hashPassword(user.password);
             await db.execute(
               `INSERT INTO USERS (username, password_hash, role, email, firstName, lastName, isActive)
-               VALUES (?, ?, ?, ?, ?, ?, 1)`,
+               VALUES ($1, $2, $3, $4, $5, $6, TRUE)`,
               [user.username, hashedPassword, user.role, user.email, user.firstName, user.lastName]
             );
             console.log(`✅ Created user: ${user.username} (${user.role})`);
@@ -220,7 +220,7 @@ async function displayUsers() {
 async function main() {
   try {
     console.log('🚀 Starting user seeding...');
-    console.log('📍 Database Type:', process.env.DB_TYPE || 'sqlite');
+    console.log('📍 Database Type:', process.env.DB_TYPE || 'postgres');
     
     // Check for force flag
     const args = process.argv.slice(2);

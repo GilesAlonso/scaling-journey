@@ -49,21 +49,21 @@ async function autoSeedOnStartup() {
 }
 
 /**
- * Create USERS table (reused from seed script)
+ * Create USERS table (PostgreSQL syntax)
  */
 async function createUsersTable() {
   const createTableSQL = `
     CREATE TABLE USERS (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       username VARCHAR(50) UNIQUE NOT NULL,
       password_hash VARCHAR(255) NOT NULL,
       role VARCHAR(20) NOT NULL,
       email VARCHAR(100) UNIQUE NOT NULL,
       firstName VARCHAR(50),
       lastName VARCHAR(50),
-      isActive BOOLEAN DEFAULT 1,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      isActive BOOLEAN DEFAULT TRUE,
+      createdAt TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
   `;
   
@@ -72,7 +72,7 @@ async function createUsersTable() {
 }
 
 /**
- * Seed initial users (reused from seed script logic)
+ * Seed initial users (PostgreSQL syntax)
  */
 async function seedInitialUsers() {
   const testUsers = [
@@ -110,14 +110,16 @@ async function seedInitialUsers() {
       try {
         const hashedPassword = await bcrypt.hash(user.password, 10);
         
-        // Use INSERT OR REPLACE for SQLite compatibility
+        // Use PostgreSQL UPSERT syntax
         await db.execute(
-          `INSERT OR REPLACE INTO USERS (id, username, password_hash, role, email, firstName, lastName, isActive)
-           VALUES (
-             COALESCE((SELECT id FROM USERS WHERE username = ?), NULL),
-             ?, ?, ?, ?, ?, ?, 1
-           )`,
-          [user.username, user.username, hashedPassword, user.role, user.email, user.firstName, user.lastName]
+          `INSERT INTO USERS (username, password_hash, role, email, firstName, lastName, isActive)
+           VALUES ($1, $2, $3, $4, $5, $6, TRUE)
+           ON CONFLICT (username) DO UPDATE SET
+           password_hash = EXCLUDED.password_hash,
+           role = EXCLUDED.role,
+           firstName = EXCLUDED.firstName,
+           lastName = EXCLUDED.lastName`,
+          [user.username, hashedPassword, user.role, user.email, user.firstName, user.lastName]
         );
         console.log(`✅ Seeded user: ${user.username} (${user.role})`);
       } catch (userError) {
@@ -194,7 +196,7 @@ app.get('/health', (req, res) => {
     status: 'OK', 
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    database: process.env.DB_TYPE || 'sqlite'
+    database: process.env.DB_TYPE || 'postgres'
   });
 });
 
@@ -223,7 +225,7 @@ app.get('/api/users', authenticateToken, requireRole('admin'), async (req, res) 
 app.get('/api/me', authenticateToken, async (req, res) => {
   try {
     const users = await db.execute(
-      'SELECT id, username, role, email, firstName, lastName, isActive, createdAt, updatedAt FROM USERS WHERE id = ?',
+      'SELECT id, username, role, email, firstName, lastName, isActive, createdAt, updatedAt FROM USERS WHERE id = $1',
       [req.user.id]
     );
     
@@ -256,10 +258,10 @@ app.post('/api/auth/login', async (req, res) => {
       });
     }
 
-    // Find user in database
+    // Find user in database (PostgreSQL syntax)
     const users = await db.execute(
-      'SELECT id, username, password_hash, role, email, firstName, lastName, isActive FROM USERS WHERE username = ? OR email = ?',
-      [username, username]
+      'SELECT id, username, password_hash, role, email, firstName, lastName, isActive FROM USERS WHERE username = $1 OR email = $1',
+      [username]
     );
 
     if (users.length === 0) {

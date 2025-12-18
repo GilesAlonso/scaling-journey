@@ -1,6 +1,6 @@
-# Scaling Journey - JWT Authentication with NocoDB
+# Scaling Journey - JWT Authentication with NocoDB (PostgreSQL)
 
-A complete JWT authentication system with automatic user seeding for testing purposes.
+A complete JWT authentication system with automatic user seeding for NocoDB PostgreSQL testing.
 
 ## Features
 
@@ -10,6 +10,8 @@ A complete JWT authentication system with automatic user seeding for testing pur
 - ✅ **Role-based Authorization**: Admin, driver, customer, dispatcher, support roles
 - ✅ **Password Hashing**: Secure bcryptjs hashing
 - ✅ **Database Auto-migration**: Creates USERS table if missing
+- ✅ **PostgreSQL Support**: Native PostgreSQL support for NocoDB
+- ✅ **SQLite Support**: Fallback for testing
 - ✅ **Force Override**: Use `--force` flag to overwrite existing users
 
 ## Quick Start
@@ -19,16 +21,26 @@ A complete JWT authentication system with automatic user seeding for testing pur
 npm install
 ```
 
-### 2. Configure Environment
-Edit `.env` file with your NocoDB configuration:
+### 2. Configure Environment for NocoDB PostgreSQL
+Edit `.env` file with your NocoDB PostgreSQL configuration:
 ```env
+# NocoDB PostgreSQL Configuration
 NOCODB_HOST=localhost
-NOCODB_PORT=8080
-NOCODB_DATABASE=scaling_journey
-NOCODB_USERNAME=root
-NOCODB_PASSWORD=password
+NOCODB_PORT=5432
+NOCODB_DATABASE=nocodb
+NOCODB_USERNAME=postgres
+NOCODB_PASSWORD=your_postgres_password
+
+# Database Type
+DB_TYPE=postgres
+
+# JWT Configuration
 JWT_SECRET=your-super-secret-jwt-key-here
+JWT_EXPIRES_IN=24h
+
+# Server Configuration
 PORT=3000
+NODE_ENV=development
 ```
 
 ### 3. Start the Server
@@ -37,7 +49,7 @@ npm start
 ```
 
 The server will automatically:
-1. Connect to NocoDB
+1. Connect to NocoDB PostgreSQL
 2. Create USERS table if it doesn't exist
 3. Seed initial test users if table is empty
 4. Start HTTP server on port 3000
@@ -51,6 +63,13 @@ npm run seed
 npm run seed:force
 # or
 node seed-users.js --force
+```
+
+## For Development/Testing (SQLite)
+```bash
+# Use SQLite for testing
+DB_TYPE=sqlite npm start
+DB_TYPE=sqlite node seed-users.js
 ```
 
 ## Test Users
@@ -157,12 +176,12 @@ curl -X GET http://localhost:3000/api/admin/test-jwt \
   -H "Authorization: Bearer DRIVER_JWT_TOKEN"
 ```
 
-## Database Schema
+## Database Schema (PostgreSQL)
 
 ### USERS Table
 ```sql
 CREATE TABLE USERS (
-  id INT AUTO_INCREMENT PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   username VARCHAR(50) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   role VARCHAR(20) NOT NULL,
@@ -170,12 +189,9 @@ CREATE TABLE USERS (
   firstName VARCHAR(50),
   lastName VARCHAR(50),
   isActive BOOLEAN DEFAULT TRUE,
-  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  INDEX idx_username (username),
-  INDEX idx_role (role),
-  INDEX idx_email (email)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  createdAt TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+)
 ```
 
 ## Configuration
@@ -184,11 +200,12 @@ CREATE TABLE USERS (
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `NOCODB_HOST` | NocoDB host | `localhost` |
-| `NOCODB_PORT` | NocoDB port | `8080` |
-| `NOCODB_DATABASE` | Database name | `scaling_journey` |
-| `NOCODB_USERNAME` | Database username | `root` |
-| `NOCODB_PASSWORD` | Database password | `password` |
+| `NOCODB_HOST` | NocoDB PostgreSQL host | `localhost` |
+| `NOCODB_PORT` | NocoDB PostgreSQL port | `5432` |
+| `NOCODB_DATABASE` | PostgreSQL database name | `nocodb` |
+| `NOCODB_USERNAME` | PostgreSQL username | `postgres` |
+| `NOCODB_PASSWORD` | PostgreSQL password | `password` |
+| `DB_TYPE` | Database type (`postgres` or `sqlite`) | `postgres` |
 | `JWT_SECRET` | Secret key for JWT signing | `your-super-secret-jwt-key-here` |
 | `JWT_EXPIRES_IN` | JWT token expiration | `24h` |
 | `PORT` | Server port | `3000` |
@@ -197,7 +214,7 @@ CREATE TABLE USERS (
 ## Seeding Logic
 
 ### Auto-Seeding (on startup)
-1. Check if USERS table exists
+1. Check if USERS table exists in PostgreSQL
 2. If not, create table and seed users
 3. If exists but empty, seed users
 4. If has data, skip seeding
@@ -205,6 +222,22 @@ CREATE TABLE USERS (
 ### Manual Seeding
 - **Normal mode**: Only seeds if table is empty
 - **Force mode** (`--force`): Overwrites existing users
+
+## Database Differences
+
+### PostgreSQL (Production - NocoDB)
+- Uses `$1, $2, $3` parameter placeholders
+- `SERIAL PRIMARY KEY` for auto-increment
+- `TIMESTAMP WITH TIME ZONE` for timestamps
+- `BOOLEAN DEFAULT TRUE/FALSE` for booleans
+- `ON CONFLICT` for upsert operations
+
+### SQLite (Testing)
+- Uses `?` parameter placeholders
+- `INTEGER PRIMARY KEY` for auto-increment
+- `DATETIME` for timestamps
+- `BOOLEAN DEFAULT 1/0` for booleans
+- `INSERT OR REPLACE` for upsert operations
 
 ## Error Handling
 
@@ -228,8 +261,11 @@ CREATE TABLE USERS (
 # Install dependencies
 npm install
 
-# Start development server
+# Start development server (PostgreSQL)
 npm start
+
+# Start development server (SQLite for testing)
+DB_TYPE=sqlite npm start
 
 # In another terminal, run tests
 node test-jwt.js
@@ -252,12 +288,35 @@ const testUsers = [
 ];
 ```
 
+## PostgreSQL Connection Issues
+
+### Common Solutions
+1. **Check PostgreSQL service is running**
+   ```bash
+   sudo systemctl status postgresql
+   ```
+
+2. **Verify connection credentials**
+   ```bash
+   psql -h localhost -U postgres -d nocodb
+   ```
+
+3. **Check firewall settings**
+   ```bash
+   sudo ufw status
+   ```
+
+4. **Verify NocoDB PostgreSQL configuration**
+   - Ensure NocoDB is configured to use PostgreSQL
+   - Check NocoDB database connection settings
+
 ## Troubleshooting
 
 ### Database Connection Issues
-1. Check NocoDB is running
+1. Check PostgreSQL is running and accessible
 2. Verify database credentials in `.env`
-3. Ensure database exists
+3. Ensure `nocodb` database exists
+4. Check network connectivity and firewall rules
 
 ### Seeding Issues
 1. Check database write permissions
@@ -272,7 +331,7 @@ const testUsers = [
 ## Next Steps
 
 This setup provides a solid foundation for:
-- JWT authentication testing
+- JWT authentication testing with NocoDB
 - Role-based authorization
 - User management systems
 - API testing and development

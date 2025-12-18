@@ -1,14 +1,14 @@
-const mysql = require('mysql2/promise');
+const { Pool } = require('pg');
 const sqlite3 = require('sqlite3').verbose();
 const { promisify } = require('util');
 
 /**
  * Database configuration and connection helper
- * Supports both MySQL (production) and SQLite (testing)
+ * Supports both PostgreSQL (NocoDB) and SQLite (testing)
  */
 class Database {
   constructor() {
-    this.dbType = process.env.DB_TYPE || 'sqlite'; // 'mysql' or 'sqlite'
+    this.dbType = process.env.DB_TYPE || 'postgres'; // 'postgres' or 'sqlite'
     this.connection = null;
     this.pool = null;
   }
@@ -18,8 +18,8 @@ class Database {
    */
   async connect() {
     try {
-      if (this.dbType === 'mysql') {
-        await this.connectMySQL();
+      if (this.dbType === 'postgres') {
+        await this.connectPostgreSQL();
       } else {
         await this.connectSQLite();
       }
@@ -31,24 +31,26 @@ class Database {
   }
 
   /**
-   * Connect to MySQL (NocoDB)
+   * Connect to PostgreSQL (NocoDB)
    */
-  async connectMySQL() {
+  async connectPostgreSQL() {
     const dbConfig = {
       host: process.env.NOCODB_HOST || 'localhost',
-      port: process.env.NOCODB_PORT || 8080,
-      user: process.env.NOCODB_USERNAME || 'root',
+      port: process.env.NOCODB_PORT || 5432,
+      user: process.env.NOCODB_USERNAME || 'postgres',
       password: process.env.NOCODB_PASSWORD || 'password',
-      database: process.env.NOCODB_DATABASE || 'scaling_journey',
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0
+      database: process.env.NOCODB_DATABASE || 'nocodb',
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
     };
 
-    this.pool = mysql.createPool(dbConfig);
+    this.pool = new Pool(dbConfig);
     
     // Test connection
-    await this.pool.query('SELECT 1');
+    const client = await this.pool.connect();
+    await client.query('SELECT NOW()');
+    client.release();
   }
 
   /**
@@ -72,9 +74,9 @@ class Database {
    * Execute query
    */
   async execute(sql, params = []) {
-    if (this.dbType === 'mysql') {
-      const [rows] = await this.pool.execute(sql, params);
-      return rows;
+    if (this.dbType === 'postgres') {
+      const result = await this.pool.query(sql, params);
+      return result.rows;
     } else {
       return this.executeSQLite(sql, params);
     }
@@ -110,9 +112,16 @@ class Database {
    * Check if table exists
    */
   async tableExists(tableName) {
-    if (this.dbType === 'mysql') {
-      const [rows] = await this.execute(`SHOW TABLES LIKE ?`, [tableName]);
-      return rows.length > 0;
+    if (this.dbType === 'postgres') {
+      const result = await this.execute(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = $1
+        )`, 
+        [tableName]
+      );
+      return result[0].exists;
     } else {
       const rows = await this.execute(
         `SELECT name FROM sqlite_master WHERE type='table' AND name=?`, 
@@ -123,31 +132,39 @@ class Database {
   }
 
   /**
-   * Create table (MySQL compatible syntax)
+   * Create table (PostgreSQL compatible syntax)
    */
   async createTable(sql) {
     if (this.dbType === 'sqlite') {
-      // Convert MySQL syntax to SQLite
-      sql = this.convertMySQLToSQLite(sql);
+      // Convert PostgreSQL syntax to SQLite
+      sql = this.convertPostgreSQLToSQLite(sql);
     }
     
     await this.execute(sql);
   }
 
   /**
-   * Convert MySQL syntax to SQLite
+   * Convert PostgreSQL syntax to SQLite
    */
-  convertMySQLToSQLite(mysqlSql) {
-    let sqliteSql = mysqlSql;
+  convertPostgreSQLToSQLite(postgresSql) {
+    let sqliteSql = postgresSql;
     
-    // Remove MySQL-specific syntax
-    sqliteSql = sqliteSql.replace(/AUTO_INCREMENT/gi, 'AUTOINCREMENT');
-    sqliteSql = sqliteSql.replace(/ON UPDATE CURRENT_TIMESTAMP/gi, '');
-    sqliteSql = sqliteSql.replace(/DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci/gi, '');
-    sqliteSql = sqliteSql.replace(/ENGINE=InnoDB/gi, '');
+    // Handle SERIAL PRIMARY KEY
+    sqliteSql = sqliteSql.replace(/SERIAL PRIMARY KEY/gi, 'INTEGER PRIMARY KEY');
+    
+    // Handle TIMESTAMP WITH TIME ZONE
+    sqliteSql = sqliteSql.replace(/TIMESTAMP WITH TIME ZONE/gi, 'DATETIME');
+    sqliteSql = sqliteSql.replace(/TIMESTAMP WITHOUT TIME ZONE/gi, 'DATETIME');
     
     // Handle TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     sqliteSql = sqliteSql.replace(/TIMESTAMP DEFAULT CURRENT_TIMESTAMP/gi, 'DATETIME DEFAULT CURRENT_TIMESTAMP');
+    
+    // Remove ON UPDATE CURRENT_TIMESTAMP
+    sqliteSql = sqliteSql.replace(/ON UPDATE CURRENT_TIMESTAMP/gi, '');
+    
+    // Handle BOOLEAN DEFAULT TRUE/FALSE
+    sqliteSql = sqliteSql.replace(/BOOLEAN DEFAULT TRUE/gi, 'BOOLEAN DEFAULT 1');
+    sqliteSql = sqliteSql.replace(/BOOLEAN DEFAULT FALSE/gi, 'BOOLEAN DEFAULT 0');
     
     return sqliteSql;
   }
@@ -156,11 +173,7 @@ class Database {
    * Begin transaction
    */
   async beginTransaction() {
-    if (this.dbType === 'mysql') {
-      await this.execute('START TRANSACTION');
-    } else {
-      await this.execute('BEGIN TRANSACTION');
-    }
+    await this.execute('BEGIN');
   }
 
   /**
@@ -181,7 +194,7 @@ class Database {
    * Close connection
    */
   async close() {
-    if (this.dbType === 'mysql' && this.pool) {
+    if (this.dbType === 'postgres' && this.pool) {
       await this.pool.end();
     } else if (this.dbType === 'sqlite' && this.connection) {
       return new Promise((resolve) => {
