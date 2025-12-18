@@ -1,14 +1,11 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const db = require('./database');
+const { authenticateToken, requireRole, generateToken } = require('./middleware/authMiddleware');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-here';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 
 // Middleware
 app.use(express.json());
@@ -134,58 +131,6 @@ async function seedInitialUsers() {
   }
   
   console.log('🌱 Initial user seeding completed');
-}
-
-/**
- * Generate JWT token
- */
-function generateToken(user) {
-  return jwt.sign(
-    {
-      id: user.id,
-      username: user.username,
-      role: user.role,
-      email: user.email
-    },
-    JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN }
-  );
-}
-
-/**
- * Verify JWT token middleware
- */
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ error: 'Invalid or expired token' });
-    }
-    req.user = user;
-    next();
-  });
-}
-
-/**
- * Role-based authorization middleware
- */
-function requireRole(...roles) {
-  return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
-      return res.status(403).json({ 
-        error: 'Insufficient permissions',
-        required: roles,
-        current: req.user?.role 
-      });
-    }
-    next();
-  };
 }
 
 // Routes
