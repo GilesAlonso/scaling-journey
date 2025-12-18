@@ -22,6 +22,11 @@ npm install
 ```
 
 ### 2. Configure Environment for NocoDB PostgreSQL
+Copy `.env.example` to `.env` and configure with your settings:
+```bash
+cp .env.example .env
+```
+
 Edit `.env` file with your NocoDB PostgreSQL configuration:
 ```env
 # NocoDB PostgreSQL Configuration
@@ -34,13 +39,20 @@ NOCODB_PASSWORD=your_postgres_password
 # Database Type
 DB_TYPE=postgres
 
-# JWT Configuration
-JWT_SECRET=your-super-secret-jwt-key-here
-JWT_EXPIRES_IN=24h
+# JWT Configuration (IMPORTANT: Change JWT_SECRET in production!)
+# JWT_SECRET must be at least 32 characters for security
+JWT_SECRET=your-super-secret-key-min-32-chars-change-this-in-production
+JWT_EXPIRY=7d
 
 # Server Configuration
 PORT=3000
 NODE_ENV=development
+```
+
+**⚠️ Security Note:** For production, generate a secure JWT_SECRET:
+```bash
+# Generate secure random secret (64 bytes = 128 hex chars)
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 ```
 
 ### 3. Start the Server
@@ -206,10 +218,47 @@ CREATE TABLE USERS (
 | `NOCODB_USERNAME` | PostgreSQL username | `postgres` |
 | `NOCODB_PASSWORD` | PostgreSQL password | `password` |
 | `DB_TYPE` | Database type (`postgres` or `sqlite`) | `postgres` |
-| `JWT_SECRET` | Secret key for JWT signing | `your-super-secret-jwt-key-here` |
-| `JWT_EXPIRES_IN` | JWT token expiration | `24h` |
+| `JWT_SECRET` | Secret key for JWT signing (min 32 chars) | `your-super-secret-jwt-key-here` |
+| `JWT_EXPIRY` | JWT token expiration | `7d` |
 | `PORT` | Server port | `3000` |
 | `NODE_ENV` | Environment mode | `development` |
+
+### JWT Configuration Details
+
+The JWT authentication system requires proper configuration for security:
+
+#### JWT_SECRET
+- **Minimum Length:** 32 characters (recommended: 64+ characters)
+- **Production:** Use cryptographically random string
+- **Development:** Use the example secret from `.env.example`
+
+**Generate Secure Secret:**
+```bash
+# Node.js built-in crypto
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+
+# OpenSSL
+openssl rand -hex 64
+```
+
+#### JWT_EXPIRY
+Token expiration time using [vercel/ms](https://github.com/vercel/ms) format:
+- `60s` = 60 seconds
+- `5m` = 5 minutes
+- `2h` = 2 hours
+- `7d` = 7 days (recommended)
+- `30d` = 30 days
+
+**Security Considerations:**
+- Shorter expiry = More secure but more frequent logins
+- Longer expiry = Better UX but higher risk if token is compromised
+- Recommended: `7d` for development, `2h` with refresh tokens for production
+
+#### Middleware Location
+JWT middleware is in `middleware/authMiddleware.js` with three main functions:
+- `authenticateToken`: Validates JWT tokens
+- `requireRole`: Checks user roles
+- `generateToken`: Creates new tokens
 
 ## Seeding Logic
 
